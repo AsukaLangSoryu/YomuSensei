@@ -55,17 +55,33 @@ class WebScraper {
             val title = extractTitle(doc)
             val content = extractContent(doc, url)
 
-            if (content.isBlank()) {
-                Result.failure(Exception("无法提取文章内容"))
-            } else {
-                Result.success(ScrapedArticle(
-                    title = title,
-                    content = content,
-                    url = url
-                ))
+            // 改进的错误处理
+            when {
+                content.isBlank() -> {
+                    Result.failure(Exception("无法提取文章内容，可能是付费内容或网站结构不支持"))
+                }
+                content.length < 100 -> {
+                    Result.failure(Exception("提取的内容过短（${content.length}字），可能是付费墙或抓取失败"))
+                }
+                detectPaywall(doc) -> {
+                    Result.failure(Exception("检测到付费内容，请选择免费文章"))
+                }
+                else -> {
+                    Result.success(ScrapedArticle(
+                        title = title,
+                        content = content,
+                        url = url
+                    ))
+                }
             }
+        } catch (e: java.net.SocketTimeoutException) {
+            Result.failure(Exception("网络超时，请检查网络连接"))
+        } catch (e: java.net.UnknownHostException) {
+            Result.failure(Exception("无法访问该网站，请检查URL"))
+        } catch (e: org.jsoup.HttpStatusException) {
+            Result.failure(Exception("HTTP错误 ${e.statusCode}: ${e.message}"))
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception("抓取失败: ${e.message}"))
         }
     }
 
