@@ -125,6 +125,17 @@ class WebScraper {
     }
 
     /**
+     * 朝日新闻专用提取
+     */
+    private fun extractAsahiContent(doc: Document): String {
+        return doc.select("article .article-body").first()?.text()
+            ?: doc.select(".article_body").first()?.text()
+            ?: doc.select("#main-article").first()?.text()
+            ?: doc.select(".article-main").first()?.text()
+            ?: ""
+    }
+
+    /**
      * 通用提取策略
      */
     private fun extractGenericContent(doc: Document): String {
