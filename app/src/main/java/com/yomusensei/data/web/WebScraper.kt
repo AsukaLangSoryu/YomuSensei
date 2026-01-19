@@ -180,34 +180,43 @@ class WebScraper {
     }
 
     /**
-     * 通用提取策略
+     * 通用提取策略（使用扩展的选择器列表）
      */
     private fun extractGenericContent(doc: Document): String {
-        // 尝试常见的文章容器
+        return tryExtractBySelectors(doc)
+    }
+
+    /**
+     * 使用扩展的选择器列表提取内容
+     */
+    private fun tryExtractBySelectors(doc: Document): String {
         val selectors = listOf(
-            "article",
-            ".article-content",
-            ".article-body",
-            ".post-content",
-            ".entry-content",
-            ".content",
-            "main",
-            "#main"
+            // 文章容器
+            "article", ".article", "#article",
+            ".article-content", ".article-body", ".article-text",
+            ".post-content", ".post-body", ".post-text",
+            ".entry-content", ".entry-body",
+            ".content", ".main-content", "#content",
+            "main", "#main", ".main",
+            // 日语网站常见
+            ".honbun", ".body", ".text",
+            ".kiji", ".article_body"
         )
 
         for (selector in selectors) {
             val element = doc.select(selector).first()
             if (element != null) {
                 val text = element.text()
-                if (text.length > 100) {
+                if (text.length > 200) {
                     return text
                 }
             }
         }
 
-        // 如果都找不到，返回body中最长的段落集合
+        // 如果都找不到，返回body中的段落集合
         val paragraphs = doc.select("p")
-        return paragraphs.joinToString("\n\n") { it.text() }
+        val paragraphText = paragraphs.joinToString("\n\n") { it.text() }
+        return if (paragraphText.length > 200) paragraphText else ""
     }
 
     /**
