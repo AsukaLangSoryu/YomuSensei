@@ -146,6 +146,16 @@ class WebScraper {
     }
 
     /**
+     * 每日新闻专用提取
+     */
+    private fun extractMainichiContent(doc: Document): String {
+        return doc.select(".main-text").first()?.text()
+            ?: doc.select("article .article-body").first()?.text()
+            ?: doc.select(".article-main").first()?.text()
+            ?: ""
+    }
+
+    /**
      * 通用提取策略
      */
     private fun extractGenericContent(doc: Document): String {
