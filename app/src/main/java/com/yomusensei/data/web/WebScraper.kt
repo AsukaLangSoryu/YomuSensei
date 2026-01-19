@@ -251,6 +251,18 @@ class WebScraper {
     }
 
     /**
+     * 检测付费墙
+     */
+    private fun detectPaywall(doc: Document): Boolean {
+        val paywallIndicators = listOf(
+            ".paywall", ".subscription", ".premium-content",
+            ".member-only", ".subscriber-only",
+            ".有料会員", ".会員限定", ".有料記事"
+        )
+        return paywallIndicators.any { doc.select(it).isNotEmpty() }
+    }
+
+    /**
      * 清理内容
      */
     private fun cleanContent(content: String): String {
