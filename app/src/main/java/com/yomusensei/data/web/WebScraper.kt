@@ -170,6 +170,16 @@ class WebScraper {
     }
 
     /**
+     * 产经新闻专用提取
+     */
+    private fun extractSankeiContent(doc: Document): String {
+        return doc.select(".article-body").first()?.text()
+            ?: doc.select(".post-content").first()?.text()
+            ?: doc.select(".article-main").first()?.text()
+            ?: ""
+    }
+
+    /**
      * 通用提取策略
      */
     private fun extractGenericContent(doc: Document): String {
