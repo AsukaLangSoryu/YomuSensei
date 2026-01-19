@@ -136,6 +136,16 @@ class WebScraper {
     }
 
     /**
+     * 读卖新闻专用提取
+     */
+    private fun extractYomiuriContent(doc: Document): String {
+        return doc.select(".article-body").first()?.text()
+            ?: doc.select(".p-main-contents").first()?.text()
+            ?: doc.select(".article-main").first()?.text()
+            ?: ""
+    }
+
+    /**
      * 通用提取策略
      */
     private fun extractGenericContent(doc: Document): String {
