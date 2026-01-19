@@ -180,10 +180,17 @@ class WebScraper {
     }
 
     /**
-     * 通用提取策略（使用扩展的选择器列表）
+     * 通用提取策略（两阶段：选择器 + 智能算法）
      */
     private fun extractGenericContent(doc: Document): String {
-        return tryExtractBySelectors(doc)
+        // 第一步：尝试扩展的选择器列表
+        val content = tryExtractBySelectors(doc)
+        if (content.isNotBlank() && content.length > 200) {
+            return content
+        }
+
+        // 第二步：使用智能算法
+        return extractByContentDensity(doc)
     }
 
     /**
@@ -217,6 +224,30 @@ class WebScraper {
         val paragraphs = doc.select("p")
         val paragraphText = paragraphs.joinToString("\n\n") { it.text() }
         return if (paragraphText.length > 200) paragraphText else ""
+    }
+
+    /**
+     * 智能算法：基于内容密度提取正文
+     */
+    private fun extractByContentDensity(doc: Document): String {
+        val candidates = doc.select("div, article, section, main")
+        var bestElement: org.jsoup.nodes.Element? = null
+        var maxScore = 0.0
+
+        for (element in candidates) {
+            val textLength = element.ownText().length
+            val linkLength = element.select("a").text().length
+            val tagCount = element.children().size
+
+            // 评分：文本长度高，链接少，标签少
+            val score = textLength.toDouble() - linkLength * 0.5 - tagCount * 2.0
+            if (score > maxScore && textLength > 100) {
+                maxScore = score
+                bestElement = element
+            }
+        }
+
+        return bestElement?.text() ?: ""
     }
 
     /**
