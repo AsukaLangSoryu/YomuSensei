@@ -156,6 +156,20 @@ class WebScraper {
     }
 
     /**
+     * 日经新闻专用提取（含付费墙检测）
+     */
+    private fun extractNikkeiContent(doc: Document): String {
+        // 检测付费墙
+        if (doc.select(".paywall, .subscription-required, .cmn-pr_list").isNotEmpty()) {
+            return ""
+        }
+        return doc.select(".article-body").first()?.text()
+            ?: doc.select(".cmn-article_text").first()?.text()
+            ?: doc.select(".article-main").first()?.text()
+            ?: ""
+    }
+
+    /**
      * 通用提取策略
      */
     private fun extractGenericContent(doc: Document): String {
