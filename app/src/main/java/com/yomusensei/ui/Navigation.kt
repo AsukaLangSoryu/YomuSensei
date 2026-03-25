@@ -19,6 +19,7 @@ import com.yomusensei.ui.reader.ReaderScreen
 import com.yomusensei.ui.reader.ReaderViewModel
 import com.yomusensei.ui.settings.SettingsScreen
 import com.yomusensei.ui.settings.SettingsViewModel
+import com.yomusensei.ui.vocabulary.ReviewScreen
 import com.yomusensei.ui.vocabulary.VocabularyScreen
 import com.yomusensei.ui.vocabulary.VocabularyViewModel
 import java.net.URLDecoder
@@ -52,6 +53,18 @@ fun AppNavigation(
     val gson = remember { Gson() }
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // Hoist VocabularyViewModel so it is shared between vocabulary and review screens
+    val vocabularyViewModel: VocabularyViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val database = VocabularyDatabase.getDatabase(context)
+                val repository = VocabularyRepository(database.vocabularyDao())
+                @Suppress("UNCHECKED_CAST")
+                return VocabularyViewModel(repository) as T
+            }
+        }
+    )
+
     NavHost(
         navController = navController,
         startDestination = Screen.Home.route
@@ -59,15 +72,11 @@ fun AppNavigation(
         composable(Screen.Home.route) {
             HomeScreen(
                 viewModel = homeViewModel,
-                onNavigateToSettings = {
-                    navController.navigate(Screen.Settings.route)
-                },
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
                 onNavigateToReader = { article ->
                     navController.navigate(Screen.Reader.createRoute(article))
                 },
-                onNavigateToVocabulary = {
-                    navController.navigate(Screen.Vocabulary.route)
-                }
+                onNavigateToVocabulary = { navController.navigate(Screen.Vocabulary.route) }
             )
         }
 
@@ -80,9 +89,7 @@ fun AppNavigation(
 
         composable(
             route = Screen.Reader.route,
-            arguments = listOf(
-                navArgument("articleJson") { type = NavType.StringType }
-            )
+            arguments = listOf(navArgument("articleJson") { type = NavType.StringType })
         ) { backStackEntry ->
             val articleJson = backStackEntry.arguments?.getString("articleJson") ?: ""
             val decoded = URLDecoder.decode(articleJson, StandardCharsets.UTF_8.toString())
@@ -96,24 +103,22 @@ fun AppNavigation(
         }
 
         composable(Screen.Vocabulary.route) {
-            val viewModel: VocabularyViewModel = viewModel(
-                factory = object : ViewModelProvider.Factory {
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        val database = VocabularyDatabase.getDatabase(context)
-                        val repository = VocabularyRepository(database.vocabularyDao())
-                        @Suppress("UNCHECKED_CAST")
-                        return VocabularyViewModel(repository) as T
-                    }
-                }
-            )
             VocabularyScreen(
-                viewModel = viewModel,
+                viewModel = vocabularyViewModel,
                 onNavigateToDetail = { wordId ->
                     navController.navigate(Screen.VocabularyDetail.createRoute(wordId))
                 },
                 onNavigateToReview = {
+                    vocabularyViewModel.startReview()
                     navController.navigate(Screen.Review.route)
                 }
+            )
+        }
+
+        composable(Screen.Review.route) {
+            ReviewScreen(
+                viewModel = vocabularyViewModel,
+                onFinish = { navController.popBackStack() }
             )
         }
     }

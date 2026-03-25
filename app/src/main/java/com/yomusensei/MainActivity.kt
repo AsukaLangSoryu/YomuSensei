@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.yomusensei.data.api.GeminiRepository
 import com.yomusensei.data.api.SettingsRepository
 import com.yomusensei.data.vocabulary.VocabularyDatabase
 import com.yomusensei.data.vocabulary.VocabularyRepository
@@ -17,11 +16,11 @@ import com.yomusensei.ui.reader.ReaderViewModel
 import com.yomusensei.ui.settings.SettingsViewModel
 import com.yomusensei.ui.theme.Background
 import com.yomusensei.ui.theme.YomuSenseiTheme
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var settingsRepository: SettingsRepository
-    private lateinit var geminiRepository: GeminiRepository
     private lateinit var webScraper: WebScraper
     private lateinit var vocabularyRepository: VocabularyRepository
 
@@ -32,16 +31,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 初始化依赖
         settingsRepository = SettingsRepository(applicationContext)
-        geminiRepository = GeminiRepository(settingsRepository)
+        val aiProvider = runBlocking { settingsRepository.buildAiProvider() }
         webScraper = WebScraper()
         val database = VocabularyDatabase.getDatabase(applicationContext)
         vocabularyRepository = VocabularyRepository(database.vocabularyDao())
 
-        // 初始化 ViewModels
-        homeViewModel = HomeViewModel(geminiRepository, webScraper)
-        readerViewModel = ReaderViewModel(geminiRepository, settingsRepository, vocabularyRepository)
+        homeViewModel = HomeViewModel(aiProvider, webScraper)
+        readerViewModel = ReaderViewModel(aiProvider, settingsRepository, vocabularyRepository)
         settingsViewModel = SettingsViewModel(settingsRepository)
 
         setContent {

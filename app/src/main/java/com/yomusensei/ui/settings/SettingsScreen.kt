@@ -1,7 +1,9 @@
 package com.yomusensei.ui.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
@@ -15,6 +17,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yomusensei.data.api.PRESET_BASE_URLS
+import com.yomusensei.data.api.ProviderType
 import com.yomusensei.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,18 +28,25 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val apiKey by viewModel.apiKey.collectAsState()
+    val providerType by viewModel.providerType.collectAsState()
+    val openaiCompatApiKey by viewModel.openaiCompatApiKey.collectAsState()
+    val openaiCompatBaseUrl by viewModel.openaiCompatBaseUrl.collectAsState()
+    val openaiCompatModel by viewModel.openaiCompatModel.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val saveSuccess by viewModel.saveSuccess.collectAsState()
 
-    var showPassword by remember { mutableStateOf(false) }
+    var showGeminiKey by remember { mutableStateOf(false) }
+    var showOpenAIKey by remember { mutableStateOf(false) }
+    var showPresetMenu by remember { mutableStateOf(false) }
 
-    // 保存成功提示
     LaunchedEffect(saveSuccess) {
         if (saveSuccess) {
             kotlinx.coroutines.delay(2000)
             viewModel.resetSaveSuccess()
         }
     }
+
+    val isOpenClaw = openaiCompatBaseUrl.contains("18789")
 
     Scaffold(
         topBar = {
@@ -46,9 +57,7 @@ fun SettingsScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface)
             )
         },
         containerColor = Background
@@ -58,132 +67,232 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // API Key 设置卡片
+            // Provider 选择卡片
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Surface),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
+                Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "Gemini API Key",
+                        text = "AI 提供商",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = OnSurface
                     )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "请输入你的Google Gemini API Key，用于调用AI服务",
-                        fontSize = 14.sp,
-                        color = TextSecondary
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = { viewModel.updateApiKey(it) },
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("API Key") },
-                        placeholder = { Text("sk-ant-...") },
-                        visualTransformation = if (showPassword) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(
-                                    if (showPassword) Icons.Default.VisibilityOff
-                                    else Icons.Default.Visibility,
-                                    contentDescription = if (showPassword) "隐藏" else "显示"
-                                )
-                            }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Button(
-                        onClick = { viewModel.saveApiKey() },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isSaving && apiKey.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Primary,
-                            contentColor = OnPrimary
-                        ),
-                        shape = RoundedCornerShape(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (isSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = OnPrimary,
-                                strokeWidth = 2.dp
+                        ProviderType.values().forEach { type ->
+                            val label = if (type == ProviderType.GEMINI) "Gemini" else "兼容 OpenAI"
+                            FilterChip(
+                                selected = providerType == type,
+                                onClick = { viewModel.updateProviderType(type) },
+                                label = { Text(label) }
                             )
-                        } else {
-                            Text("保存")
                         }
                     }
+                }
+            }
 
-                    // 保存成功提示
-                    if (saveSuccess) {
+            // Gemini 配置
+            if (providerType == ProviderType.GEMINI) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Surface),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Gemini API Key",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "保存成功！",
-                            color = Success,
-                            fontSize = 14.sp
+                            text = "请输入你的 Google Gemini API Key",
+                            fontSize = 14.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = apiKey,
+                            onValueChange = { viewModel.updateApiKey(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("API Key") },
+                            placeholder = { Text("AIza...") },
+                            visualTransformation = if (showGeminiKey) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showGeminiKey = !showGeminiKey }) {
+                                    Icon(
+                                        if (showGeminiKey) Icons.Default.VisibilityOff
+                                        else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "获取：aistudio.google.com → Get API Key",
+                            fontSize = 13.sp,
+                            color = TextHint
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 使用说明卡片
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Surface),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
+            // OpenAI 兼容配置
+            if (providerType == ProviderType.OPENAI_COMPAT) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Surface),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text(
-                        text = "如何获取API Key",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = OnSurface
-                    )
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "OpenAI 兼容配置",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OnSurface
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        // Base URL with preset dropdown
+                        Text("Base URL", fontSize = 14.sp, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = openaiCompatBaseUrl,
+                                onValueChange = { viewModel.updateOpenAICompatBaseUrl(it) },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("https://api.openai.com/v1") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            Box {
+                                OutlinedButton(onClick = { showPresetMenu = true }) {
+                                    Text("预设")
+                                }
+                                DropdownMenu(
+                                    expanded = showPresetMenu,
+                                    onDismissRequest = { showPresetMenu = false }
+                                ) {
+                                    PRESET_BASE_URLS.forEach { (name, url) ->
+                                        DropdownMenuItem(
+                                            text = { Text(name) },
+                                            onClick = {
+                                                viewModel.updateOpenAICompatBaseUrl(url)
+                                                showPresetMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
-                    Text(
-                        text = """
-1. 访问 aistudio.google.com
-2. 登录你的Google账号
-3. 点击 "Get API Key"
-4. 创建或选择一个项目
-5. 复制API Key粘贴到上方输入框
+                        Spacer(modifier = Modifier.height(12.dp))
 
-注意：Gemini API有免费额度，超出后会产生费用。
-                        """.trimIndent(),
-                        fontSize = 14.sp,
-                        color = TextSecondary,
-                        lineHeight = 22.sp
-                    )
+                        // API Key
+                        Text("API Key", fontSize = 14.sp, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = openaiCompatApiKey,
+                            onValueChange = { viewModel.updateOpenAICompatApiKey(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("sk-...") },
+                            visualTransformation = if (showOpenAIKey) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showOpenAIKey = !showOpenAIKey }) {
+                                    Icon(
+                                        if (showOpenAIKey) Icons.Default.VisibilityOff
+                                        else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Model name
+                        Text("模型名称", fontSize = 14.sp, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = openaiCompatModel,
+                            onValueChange = { viewModel.updateOpenAICompatModel(it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("gpt-4o-mini / deepseek-chat / openclaw") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        // OpenClaw tip
+                        if (isOpenClaw) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "OpenClaw 模式：请确保电脑上的 OpenClaw 正在运行，且手机和电脑处于同一 WiFi 网络。",
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(12.dp),
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
                 }
+            }
+
+            // Save button
+            Button(
+                onClick = { viewModel.saveSettings() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isSaving,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Primary,
+                    contentColor = OnPrimary
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = OnPrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("保存设置")
+                }
+            }
+
+            if (saveSuccess) {
+                Text(
+                    text = "保存成功！",
+                    color = Success,
+                    fontSize = 14.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
             }
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 版本信息
             Text(
                 text = "読む先生 v1.0",
                 fontSize = 12.sp,

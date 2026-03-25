@@ -2,7 +2,7 @@ package com.yomusensei.ui.reader
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.yomusensei.data.api.GeminiRepository
+import com.yomusensei.data.api.AiProvider
 import com.yomusensei.data.api.SettingsRepository
 import com.yomusensei.data.model.Article
 import com.yomusensei.data.model.TextExplanation
@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class ReaderViewModel(
-    private val geminiRepository: GeminiRepository,
+    private val geminiRepository: AiProvider,
     private val settingsRepository: SettingsRepository,
     private val vocabularyRepository: VocabularyRepository
 ) : ViewModel() {

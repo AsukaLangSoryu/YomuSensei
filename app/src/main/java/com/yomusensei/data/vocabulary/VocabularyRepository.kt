@@ -1,6 +1,7 @@
 package com.yomusensei.data.vocabulary
 
 import kotlinx.coroutines.flow.Flow
+import com.yomusensei.data.model.ReviewQuestion
 import java.util.Calendar
 
 class VocabularyRepository(private val dao: VocabularyDao) {
@@ -150,6 +151,33 @@ class VocabularyRepository(private val dao: VocabularyDao) {
             distractors.addAll(random)
         }
 
-        return distractors.take(3).map { it.meaning }
+        return distractors.take(3).map { it.word }
+    }
+
+    suspend fun generateReviewQuestion(word: VocabularyWord): ReviewQuestion? {
+        if (word.meaning.isBlank()) return null
+        val distractors = getSmartDistractors(word)
+        if (distractors.isEmpty()) return null
+        val options = (listOf(word.word) + distractors).shuffled()
+        val correctIndex = options.indexOf(word.word)
+        return ReviewQuestion(
+            word = word,
+            question = word.meaning,
+            options = options,
+            correctIndex = correctIndex
+        )
+    }
+
+    suspend fun updateReviewResult(word: VocabularyWord, isCorrect: Boolean) {
+        val (newLevel, nextReviewTime) = ReviewScheduler.calculateNextReview(word.reviewLevel, isCorrect)
+        dao.updateWord(
+            word.copy(
+                reviewLevel = newLevel,
+                nextReviewTime = nextReviewTime,
+                reviewCount = word.reviewCount + 1,
+                correctCount = if (isCorrect) word.correctCount + 1 else word.correctCount,
+                lastReviewTime = System.currentTimeMillis()
+            )
+        )
     }
 }

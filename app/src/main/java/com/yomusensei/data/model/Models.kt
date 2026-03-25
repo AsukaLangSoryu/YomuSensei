@@ -109,6 +109,14 @@ data class GeminiError(
 )
 
 /**
+ * 文章搜索结果（包含AI回复和grounding数据）
+ */
+data class ArticleSearchResult(
+    val text: String,
+    val groundingChunks: List<GroundingChunk>?
+)
+
+/**
  * 复习题目
  */
 data class ReviewQuestion(

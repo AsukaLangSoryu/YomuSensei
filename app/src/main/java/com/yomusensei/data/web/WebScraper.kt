@@ -332,6 +332,72 @@ class WebScraper {
         }
         return articles
     }
+
+    /**
+     * 直接抓取 NHK Web Easy 最新文章列表（HTML + JSON 双通道）
+     * 优先 HTML 抓取，失败则回退 JSON
+     */
+    suspend fun fetchNhkEasyArticleList(): Result<List<Article>> = withContext(Dispatchers.IO) {
+        try {
+            val doc = Jsoup.connect("https://www3.nhk.or.jp/news/easy/")
+                .userAgent("Mozilla/5.0 (Android 14; Mobile) AppleWebKit/537.36")
+                .timeout(TIMEOUT)
+                .get()
+
+            val articles = doc.select("article.news-list-item, .news-easy-list li, li[class*=news]")
+                .take(10)
+                .mapNotNull { element ->
+                    val link = element.selectFirst("a") ?: return@mapNotNull null
+                    val title = element.selectFirst("em, .title, h2, h3")?.text()
+                        ?: link.text()
+                    val path = link.attr("href")
+                    val url = if (path.startsWith("http")) path
+                              else "https://www3.nhk.or.jp$path"
+                    if (title.isBlank() || url.isBlank()) null
+                    else Article(
+                        title = title,
+                        url = url,
+                        description = "NHK Web Easy - 简单日语新闻",
+                        source = "NHK Web Easy"
+                    )
+                }
+
+            if (articles.isEmpty()) {
+                fetchNhkEasyViaJson()
+            } else {
+                Result.success(articles)
+            }
+        } catch (e: Exception) {
+            // HTML scraping failed, try JSON
+            fetchNhkEasyViaJson()
+        }
+    }
+
+    private suspend fun fetchNhkEasyViaJson(): Result<List<Article>> = withContext(Dispatchers.IO) {
+        // Reuse existing fetchNhkEasyArticles which reads from NHK_EASY_LIST_URL
+        fetchNhkEasyArticles(10)
+    }
+
+    /**
+     * 青空文庫随机作品推荐
+     */
+    suspend fun fetchAozoraRandomWorks(count: Int = 5): Result<List<Article>> = withContext(Dispatchers.IO) {
+        try {
+            val doc = Jsoup.connect("https://www.aozora.gr.jp/index_pages/person_all.html")
+                .userAgent(USER_AGENT)
+                .timeout(TIMEOUT)
+                .get()
+            val links = doc.select("a[href*=cards]").shuffled().take(count)
+            val articles = links.mapNotNull { link ->
+                val title = link.text().ifBlank { null } ?: return@mapNotNull null
+                val href = link.attr("abs:href")
+                Article(title = title, url = href, description = "青空文庫 - 日本文学", source = "青空文庫")
+            }
+            Result.success(articles)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }
 
 data class ScrapedArticle(

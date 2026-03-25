@@ -29,6 +29,16 @@ fun WordListTab(
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val selectedIds by viewModel.selectedWordIds.collectAsState()
 
+    var detailWord by remember { mutableStateOf<com.yomusensei.data.vocabulary.VocabularyWord?>(null) }
+
+    detailWord?.let { word ->
+        WordDetailDialog(
+            word = word,
+            onDismiss = { detailWord = null },
+            onDelete = { viewModel.deleteWord(it) }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // 搜索框
         SearchBar(
@@ -58,7 +68,7 @@ fun WordListTab(
                             if (isSelectionMode) {
                                 viewModel.toggleWordSelection(word.id)
                             } else {
-                                onNavigateToDetail(word.id)
+                                detailWord = word
                             }
                         },
                         onLongClick = {

@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
-import com.yomusensei.data.api.GeminiRepository
+import com.yomusensei.data.api.AiProvider
 import com.yomusensei.data.api.UserIntent
 import com.yomusensei.data.model.Article
 import com.yomusensei.data.model.ChatMessage
@@ -15,21 +15,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/**
- * 对话模式
- */
 enum class ChatMode {
-    AUTO,       // 自动识别意图
-    ARTICLE,    // 文章推荐模式
-    FREE_CHAT   // 自由对话模式
+    AUTO,
+    ARTICLE,
+    FREE_CHAT
 }
 
 class HomeViewModel(
-    private val geminiRepository: GeminiRepository,
+    private val aiProvider: AiProvider,
     private val webScraper: WebScraper
 ) : ViewModel() {
 
-    // 对话模式
     private val _chatMode = MutableStateFlow(ChatMode.AUTO)
     val chatMode: StateFlow<ChatMode> = _chatMode.asStateFlow()
 
@@ -54,38 +50,23 @@ class HomeViewModel(
 
     private val gson = Gson()
 
-    /**
-     * 切换对话模式
-     */
     fun setChatMode(mode: ChatMode) {
         _chatMode.value = mode
     }
 
-    /**
-     * 获取对话历史（用于多轮对话）
-     */
     private fun getConversationHistory(): List<Pair<String, Boolean>> {
         return _messages.value
-            .drop(1) // 跳过欢迎消息
+            .drop(1)
             .map { it.content to it.isFromUser }
     }
 
-    /**
-     * 发送消息
-     */
     fun sendMessage(text: String) {
         if (text.isBlank() || _isLoading.value) return
 
         viewModelScope.launch {
-            // 添加用户消息
-            _messages.value = _messages.value + ChatMessage(
-                content = text,
-                isFromUser = true
-            )
-
+            _messages.value = _messages.value + ChatMessage(content = text, isFromUser = true)
             _isLoading.value = true
 
-            // 根据模式处理消息
             when (_chatMode.value) {
                 ChatMode.AUTO -> handleAutoMode(text)
                 ChatMode.ARTICLE -> handleArticleMode(text)
@@ -96,11 +77,8 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * 自动模式：先识别意图再处理
-     */
     private suspend fun handleAutoMode(text: String) {
-        val intent = geminiRepository.detectIntent(text)
+        val intent = aiProvider.detectIntent(text)
         when (intent) {
             UserIntent.ARTICLE_REQUEST -> handleArticleMode(text)
             UserIntent.JAPANESE_QUESTION -> handleJapaneseQuestion(text)
@@ -108,24 +86,33 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * 文章推荐模式
-     */
     private suspend fun handleArticleMode(text: String) {
-        val result = geminiRepository.requestArticles(text)
+        // Try NHK direct scraping first
+        val nhkResult = webScraper.fetchNhkEasyArticleList()
+        if (nhkResult.isSuccess) {
+            val articles = nhkResult.getOrNull().orEmpty()
+            if (articles.isNotEmpty()) {
+                _messages.value = _messages.value + ChatMessage(
+                    content = "已为你获取最新 NHK Web Easy 新闻 ${articles.size} 篇，点击即可开始阅读：",
+                    isFromUser = false,
+                    articles = articles
+                )
+                return
+            }
+        }
+
+        // Fall back to AI search
+        val result = aiProvider.requestArticles(text)
         result.fold(
             onSuccess = { searchResult ->
                 val parsedResponse = parseAiResponse(searchResult.text)
 
-                // 如果 AI 没有返回正确的 JSON 格式（没有文章），尝试从 groundingChunks 提取
                 val articles = if (parsedResponse.articles.isNullOrEmpty() && !searchResult.groundingChunks.isNullOrEmpty()) {
-                    // 从 grounding metadata 构建文章列表
                     buildArticlesFromGrounding(searchResult.groundingChunks)
                 } else {
                     parsedResponse.articles ?: emptyList()
                 }
 
-                // 如果仍然没有文章，提示用户
                 val message = if (articles.isEmpty()) {
                     if (parsedResponse.message.contains("我会") || parsedResponse.message.contains("帮你")) {
                         "抱歉，搜索暂时没有返回结果。请尝试更具体的描述，例如：\n• 我想看关于日本料理的简单新闻\n• 推荐一篇青空文库的短篇小说"
@@ -155,9 +142,6 @@ class HomeViewModel(
         )
     }
 
-    /**
-     * 从 Google Search Grounding 结果构建文章列表
-     */
     private fun buildArticlesFromGrounding(chunks: List<GroundingChunk>): List<Article> {
         return chunks.mapNotNull { chunk ->
             val web = chunk.web
@@ -168,23 +152,15 @@ class HomeViewModel(
                     description = "来自 Google 搜索结果",
                     source = web.uri.substringAfter("://").substringBefore("/")
                 )
-            } else {
-                null
-            }
-        }.distinctBy { it.url } // 去重
+            } else null
+        }.distinctBy { it.url }
     }
 
-    /**
-     * 日语学习问题
-     */
     private suspend fun handleJapaneseQuestion(text: String) {
-        val result = geminiRepository.askQuestion(text)
+        val result = aiProvider.askQuestion(text)
         result.fold(
             onSuccess = { response ->
-                _messages.value = _messages.value + ChatMessage(
-                    content = response,
-                    isFromUser = false
-                )
+                _messages.value = _messages.value + ChatMessage(content = response, isFromUser = false)
             },
             onFailure = { error ->
                 _messages.value = _messages.value + ChatMessage(
@@ -195,9 +171,6 @@ class HomeViewModel(
         )
     }
 
-    /**
-     * 自由对话模式（支持多轮对话）
-     */
     private suspend fun handleFreeChatMode(text: String) {
         val systemPrompt = """
 你是読む先生，一个友好的日语学习助手。
@@ -207,14 +180,11 @@ class HomeViewModel(
 """.trimIndent()
 
         val history = getConversationHistory()
-        val result = geminiRepository.chatWithHistory(history, systemPrompt)
+        val result = aiProvider.chatWithHistory(history, systemPrompt)
 
         result.fold(
             onSuccess = { response ->
-                _messages.value = _messages.value + ChatMessage(
-                    content = response,
-                    isFromUser = false
-                )
+                _messages.value = _messages.value + ChatMessage(content = response, isFromUser = false)
             },
             onFailure = { error ->
                 _messages.value = _messages.value + ChatMessage(
@@ -225,15 +195,10 @@ class HomeViewModel(
         )
     }
 
-    /**
-     * 选择文章进行阅读
-     */
     fun selectArticle(article: Article) {
         viewModelScope.launch {
             _isLoadingArticle.value = true
-
             val result = webScraper.fetchArticle(article.url)
-
             result.fold(
                 onSuccess = { scraped ->
                     _selectedArticle.value = article.copy(
@@ -248,29 +213,20 @@ class HomeViewModel(
                     )
                 }
             )
-
             _isLoadingArticle.value = false
         }
     }
 
-    /**
-     * 清除选中的文章
-     */
     fun clearSelectedArticle() {
         _selectedArticle.value = null
     }
 
-    /**
-     * 直接从URL加载文章
-     */
     fun loadArticleFromUrl(url: String) {
         if (url.isBlank()) return
 
         viewModelScope.launch {
             _isLoadingArticle.value = true
-
             val result = webScraper.fetchArticle(url)
-
             result.fold(
                 onSuccess = { scraped ->
                     _selectedArticle.value = Article(
@@ -287,17 +243,12 @@ class HomeViewModel(
                     )
                 }
             )
-
             _isLoadingArticle.value = false
         }
     }
 
-    /**
-     * 解析AI响应
-     */
     private fun parseAiResponse(response: String): AiArticleResponse {
         return try {
-            // 尝试解析JSON
             val jsonStart = response.indexOf("{")
             val jsonEnd = response.lastIndexOf("}") + 1
 
