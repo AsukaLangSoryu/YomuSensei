@@ -4,9 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yomusensei.data.local.DictionaryRepository
 import com.yomusensei.data.model.DictionaryEntry
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class DictionaryBrowserViewModel(
@@ -19,28 +17,18 @@ class DictionaryBrowserViewModel(
     private val _selectedKana = MutableStateFlow<String?>(null)
     val selectedKana: StateFlow<String?> = _selectedKana.asStateFlow()
 
-    private val _words = MutableStateFlow<List<DictionaryEntry>>(emptyList())
-    val words: StateFlow<List<DictionaryEntry>> = _words.asStateFlow()
-
-    init {
-        loadWords()
-    }
+    val words: StateFlow<List<DictionaryEntry>> = combine(
+        _searchQuery.debounce(300),
+        _selectedKana
+    ) { query, kana ->
+        dictionaryRepository.browseWords(query, kana)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
-        loadWords()
     }
 
     fun selectKana(kana: String?) {
         _selectedKana.value = kana
-        loadWords()
-    }
-
-    private fun loadWords() {
-        viewModelScope.launch {
-            val query = _searchQuery.value
-            val kana = _selectedKana.value
-            _words.value = dictionaryRepository.browseWords(query, kana)
-        }
     }
 }

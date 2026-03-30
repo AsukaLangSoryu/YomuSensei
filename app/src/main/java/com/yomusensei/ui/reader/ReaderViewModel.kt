@@ -270,6 +270,16 @@ class ReaderViewModel(
     }
 
     /**
+     * 从提问对话框保存单词到词库
+     */
+    fun saveQuestionWordToVocabulary(word: String) {
+        viewModelScope.launch {
+            val answer = _questionAnswer.value ?: ""
+            saveToVocabulary(word, answer)
+        }
+    }
+
+    /**
      * 保存单词到词库
      */
     private suspend fun saveToVocabulary(word: String, explanation: String) {

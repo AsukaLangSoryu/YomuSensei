@@ -12,10 +12,9 @@ class DictionaryRepository(
     private val gson = Gson()
 
     suspend fun lookup(word: String): DictionaryEntry? {
-        // 1. 先查本地词典
         val localWord = dictionaryDao.getWord(word)
         if (localWord != null) {
-            return localWord.toDictionaryEntry()
+            return localWord.toDictionaryEntry(gson)
         }
 
         // 2. 查在线 API（带缓存）
@@ -51,12 +50,11 @@ class DictionaryRepository(
             kana != null -> dictionaryDao.getWordsByKana("$kana%")
             else -> dictionaryDao.getAllWordsSorted()
         }
-        return words.map { it.toDictionaryEntry() }
+        return words.map { it.toDictionaryEntry(gson) }
     }
 }
 
-private fun DictionaryWord.toDictionaryEntry(): DictionaryEntry {
-    val gson = Gson()
+private fun DictionaryWord.toDictionaryEntry(gson: Gson): DictionaryEntry {
     val meaningsList = gson.fromJson(meanings, Array<Meaning>::class.java).toList()
     val examplesList = examples?.let {
         gson.fromJson(it, Array<com.yomusensei.data.model.Example>::class.java).toList()

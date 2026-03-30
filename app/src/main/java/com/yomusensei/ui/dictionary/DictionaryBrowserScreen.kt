@@ -41,7 +41,6 @@ fun DictionaryBrowserScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 搜索框
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },
@@ -53,13 +52,11 @@ fun DictionaryBrowserScreen(
                 singleLine = true
             )
 
-            // 五十音选择器
             KanaSelector(
                 selectedKana = selectedKana,
                 onKanaSelected = { viewModel.selectKana(it) }
             )
 
-            // 单词列表
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),

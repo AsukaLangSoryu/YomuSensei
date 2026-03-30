@@ -31,9 +31,11 @@ fun DictionaryWordCard(
                     fontWeight = FontWeight.Bold
                 )
                 entry.jlptLevel?.let {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(it, fontSize = 12.sp) }
+                    Text(
+                        text = it,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(4.dp)
                     )
                 }
             }
