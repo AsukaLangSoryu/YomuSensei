@@ -3,20 +3,26 @@ package com.yomusensei.ui.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yomusensei.data.api.AiProvider
+import com.yomusensei.data.api.JishoApiService
 import com.yomusensei.data.api.SettingsRepository
 import com.yomusensei.data.model.Article
+import com.yomusensei.data.model.DictionaryEntry
 import com.yomusensei.data.model.TextExplanation
 import com.yomusensei.data.vocabulary.VocabularyRepository
 import com.yomusensei.data.vocabulary.VocabularyWord
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class ReaderViewModel(
     private val geminiRepository: AiProvider,
     private val settingsRepository: SettingsRepository,
-    private val vocabularyRepository: VocabularyRepository
+    private val vocabularyRepository: VocabularyRepository,
+    private val jishoService: JishoApiService? = null,
+    private val memoryRepository: com.yomusensei.data.api.MemoryRepository? = null,
+    private val dictionaryRepository: com.yomusensei.data.local.DictionaryRepository? = null
 ) : ViewModel() {
 
     private val _article = MutableStateFlow<Article?>(null)
@@ -25,11 +31,23 @@ class ReaderViewModel(
     private val _fontSize = MutableStateFlow(18f)
     val fontSize: StateFlow<Float> = _fontSize.asStateFlow()
 
+    private val _lineSpacing = MutableStateFlow(1.8f)
+    val lineSpacing: StateFlow<Float> = _lineSpacing.asStateFlow()
+
+    private val _paddingHorizontal = MutableStateFlow(20)
+    val paddingHorizontal: StateFlow<Int> = _paddingHorizontal.asStateFlow()
+
+    private val _backgroundMode = MutableStateFlow("light")
+    val backgroundMode: StateFlow<String> = _backgroundMode.asStateFlow()
+
     private val _selectedText = MutableStateFlow<String?>(null)
     val selectedText: StateFlow<String?> = _selectedText.asStateFlow()
 
     private val _explanation = MutableStateFlow<TextExplanation?>(null)
     val explanation: StateFlow<TextExplanation?> = _explanation.asStateFlow()
+
+    private val _dictionaryEntry = MutableStateFlow<DictionaryEntry?>(null)
+    val dictionaryEntry: StateFlow<DictionaryEntry?> = _dictionaryEntry.asStateFlow()
 
     private val _showQuestionDialog = MutableStateFlow(false)
     val showQuestionDialog: StateFlow<Boolean> = _showQuestionDialog.asStateFlow()
@@ -44,6 +62,21 @@ class ReaderViewModel(
         viewModelScope.launch {
             settingsRepository.getFontSizeFlow().collect { size ->
                 _fontSize.value = size
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getLineSpacingFlow().collect { spacing ->
+                _lineSpacing.value = spacing
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getPaddingHorizontalFlow().collect { padding ->
+                _paddingHorizontal.value = padding
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getBackgroundModeFlow().collect { mode ->
+                _backgroundMode.value = mode
             }
         }
     }
@@ -66,6 +99,29 @@ class ReaderViewModel(
         }
     }
 
+    fun adjustLineSpacing(delta: Float) {
+        viewModelScope.launch {
+            val newSpacing = (_lineSpacing.value + delta).coerceIn(1.0f, 2.5f)
+            _lineSpacing.value = newSpacing
+            settingsRepository.setLineSpacing(newSpacing)
+        }
+    }
+
+    fun adjustPadding(delta: Int) {
+        viewModelScope.launch {
+            val newPadding = (_paddingHorizontal.value + delta).coerceIn(12, 32)
+            _paddingHorizontal.value = newPadding
+            settingsRepository.setPaddingHorizontal(newPadding)
+        }
+    }
+
+    fun setBackgroundMode(mode: String) {
+        viewModelScope.launch {
+            _backgroundMode.value = mode
+            settingsRepository.setBackgroundMode(mode)
+        }
+    }
+
     /**
      * 选中文本
      */
@@ -73,6 +129,33 @@ class ReaderViewModel(
         if (text.isBlank()) return
 
         _selectedText.value = text
+
+        // 优先使用词典仓库（本地+在线）
+        if (dictionaryRepository != null) {
+            viewModelScope.launch {
+                val entry = dictionaryRepository.lookup(text)
+                if (entry != null) {
+                    _dictionaryEntry.value = entry
+                } else {
+                    fetchAiExplanation(text)
+                }
+            }
+        } else if (jishoService != null) {
+            // 回退到纯在线查询
+            viewModelScope.launch {
+                val entry = JishoApiService.searchWithCache(jishoService, text)
+                if (entry != null) {
+                    _dictionaryEntry.value = entry
+                } else {
+                    fetchAiExplanation(text)
+                }
+            }
+        } else {
+            fetchAiExplanation(text)
+        }
+    }
+
+    private fun fetchAiExplanation(text: String) {
         _explanation.value = TextExplanation(
             selectedText = text,
             explanation = "",
@@ -108,11 +191,42 @@ class ReaderViewModel(
     }
 
     /**
+     * 从词典保存到词库
+     */
+    fun saveDictionaryEntryToVocabulary() {
+        val entry = _dictionaryEntry.value ?: return
+        viewModelScope.launch {
+            val existing = vocabularyRepository.getWordByText(entry.word)
+            if (existing != null) return@launch
+
+            val vocabularyWord = VocabularyWord(
+                word = entry.word,
+                reading = entry.reading,
+                meaning = entry.meanings.firstOrNull()?.definitions?.firstOrNull() ?: "",
+                explanation = entry.meanings.joinToString("\n") { meaning ->
+                    "${meaning.partOfSpeech}: ${meaning.definitions.joinToString(", ")}"
+                },
+                partOfSpeech = entry.meanings.firstOrNull()?.partOfSpeech,
+                category = entry.jlptLevel,
+                sourceArticleTitle = _article.value?.title,
+                sourceArticleUrl = _article.value?.url,
+                addedTime = System.currentTimeMillis(),
+                isManuallyAdded = false,
+                nextReviewTime = System.currentTimeMillis()
+            )
+
+            vocabularyRepository.insertWord(vocabularyWord)
+            updateVocabularyMemory()
+        }
+    }
+
+    /**
      * 关闭解释面板
      */
     fun dismissExplanation() {
         _selectedText.value = null
         _explanation.value = null
+        _dictionaryEntry.value = null
     }
 
     /**
@@ -181,6 +295,20 @@ class ReaderViewModel(
         )
 
         vocabularyRepository.insertWord(vocabularyWord)
+        updateVocabularyMemory()
+    }
+
+    private suspend fun updateVocabularyMemory() {
+        memoryRepository?.let { repo ->
+            val allWords = vocabularyRepository.getAllWords().first()
+            val memory = repo.getMemory()
+            val updatedMemory = memory.copy(
+                learningProgress = memory.learningProgress.copy(
+                    vocabularySize = allWords.size
+                )
+            )
+            repo.updateMemory(updatedMemory)
+        }
     }
 
     /**

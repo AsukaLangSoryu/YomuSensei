@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -19,8 +20,7 @@ val PRESET_BASE_URLS = mapOf(
     "OpenAI" to "https://api.openai.com/v1",
     "DeepSeek" to "https://api.deepseek.com/v1",
     "智谱 GLM" to "https://open.bigmodel.cn/api/paas/v4",
-    "Kimi" to "https://api.moonshot.cn/v1",
-    "OpenClaw (本地)" to "http://192.168.x.x:18789"
+    "Kimi" to "https://api.moonshot.cn/v1"
 )
 
 class SettingsRepository(private val context: Context) {
@@ -29,6 +29,9 @@ class SettingsRepository(private val context: Context) {
         private val API_KEY = stringPreferencesKey("api_key")           // 兼容旧版
         private val GEMINI_API_KEY = stringPreferencesKey("gemini_api_key")
         private val FONT_SIZE = floatPreferencesKey("font_size")
+        private val LINE_SPACING = floatPreferencesKey("line_spacing")
+        private val PADDING_HORIZONTAL = intPreferencesKey("padding_horizontal")
+        private val BACKGROUND_MODE = stringPreferencesKey("background_mode")
         private val PROVIDER_TYPE = stringPreferencesKey("provider_type")
         private val OPENAI_COMPAT_API_KEY = stringPreferencesKey("openai_compat_api_key")
         private val OPENAI_COMPAT_BASE_URL = stringPreferencesKey("openai_compat_base_url")
@@ -129,5 +132,35 @@ class SettingsRepository(private val context: Context) {
 
     fun getFontSizeFlow(): Flow<Float> {
         return context.dataStore.data.map { it[FONT_SIZE] ?: 18f }
+    }
+
+    // ========== Line Spacing ==========
+
+    fun getLineSpacingFlow(): Flow<Float> {
+        return context.dataStore.data.map { it[LINE_SPACING] ?: 1.8f }
+    }
+
+    suspend fun setLineSpacing(spacing: Float) {
+        context.dataStore.edit { it[LINE_SPACING] = spacing.coerceIn(1.0f, 2.5f) }
+    }
+
+    // ========== Padding ==========
+
+    fun getPaddingHorizontalFlow(): Flow<Int> {
+        return context.dataStore.data.map { it[PADDING_HORIZONTAL] ?: 20 }
+    }
+
+    suspend fun setPaddingHorizontal(padding: Int) {
+        context.dataStore.edit { it[PADDING_HORIZONTAL] = padding.coerceIn(12, 32) }
+    }
+
+    // ========== Background Mode ==========
+
+    fun getBackgroundModeFlow(): Flow<String> {
+        return context.dataStore.data.map { it[BACKGROUND_MODE] ?: "light" }
+    }
+
+    suspend fun setBackgroundMode(mode: String) {
+        context.dataStore.edit { it[BACKGROUND_MODE] = mode }
     }
 }

@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val dictionaryRepository: com.yomusensei.data.local.DictionaryRepository? = null
 ) : ViewModel() {
 
     private val _apiKey = MutableStateFlow("")
@@ -34,6 +35,9 @@ class SettingsViewModel(
     private val _saveSuccess = MutableStateFlow(false)
     val saveSuccess: StateFlow<Boolean> = _saveSuccess.asStateFlow()
 
+    private val _dictionaryWordCount = MutableStateFlow(0)
+    val dictionaryWordCount: StateFlow<Int> = _dictionaryWordCount.asStateFlow()
+
     init {
         viewModelScope.launch {
             _apiKey.value = settingsRepository.getGeminiApiKey()
@@ -41,6 +45,7 @@ class SettingsViewModel(
             _openaiCompatApiKey.value = settingsRepository.getOpenAICompatApiKey()
             _openaiCompatBaseUrl.value = settingsRepository.getOpenAICompatBaseUrl()
             _openaiCompatModel.value = settingsRepository.getOpenAICompatModel()
+            _dictionaryWordCount.value = dictionaryRepository?.getWordCount() ?: 0
         }
     }
 

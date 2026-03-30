@@ -31,10 +31,16 @@ fun ReaderScreen(
     onBack: () -> Unit
 ) {
     val fontSize by viewModel.fontSize.collectAsState()
+    val lineSpacing by viewModel.lineSpacing.collectAsState()
+    val paddingHorizontal by viewModel.paddingHorizontal.collectAsState()
+    val backgroundMode by viewModel.backgroundMode.collectAsState()
     val explanation by viewModel.explanation.collectAsState()
+    val dictionaryEntry by viewModel.dictionaryEntry.collectAsState()
     val showQuestionDialog by viewModel.showQuestionDialog.collectAsState()
     val questionAnswer by viewModel.questionAnswer.collectAsState()
     val isAskingQuestion by viewModel.isAskingQuestion.collectAsState()
+
+    var showSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(article) {
         viewModel.setArticle(article)
@@ -56,13 +62,8 @@ fun ReaderScreen(
                     }
                 },
                 actions = {
-                    // 减小字体
-                    IconButton(onClick = { viewModel.adjustFontSize(-2f) }) {
-                        Icon(Icons.Default.TextDecrease, contentDescription = "减小字体")
-                    }
-                    // 增大字体
-                    IconButton(onClick = { viewModel.adjustFontSize(2f) }) {
-                        Icon(Icons.Default.TextIncrease, contentDescription = "增大字体")
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -79,7 +80,11 @@ fun ReaderScreen(
                 Icon(Icons.Default.QuestionAnswer, contentDescription = "提问")
             }
         },
-        containerColor = Background
+        containerColor = when (backgroundMode) {
+            "dark" -> Color(0xFF1E1E1E)
+            "sepia" -> Color(0xFFF4ECD8)
+            else -> Background
+        }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize()) {
             // 文章内容
@@ -88,15 +93,15 @@ fun ReaderScreen(
                     .fillMaxSize()
                     .padding(padding)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .padding(horizontal = paddingHorizontal.dp, vertical = 16.dp)
             ) {
                 // 标题
                 Text(
                     text = article.title,
                     fontSize = (fontSize + 4).sp,
                     fontWeight = FontWeight.Bold,
-                    color = OnBackground,
-                    lineHeight = (fontSize + 12).sp
+                    color = if (backgroundMode == "dark") Color.White else OnBackground,
+                    lineHeight = (fontSize * lineSpacing + 4).sp
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -105,12 +110,26 @@ fun ReaderScreen(
                 SelectableText(
                     text = article.content,
                     fontSize = fontSize,
+                    lineSpacing = lineSpacing,
+                    textColor = if (backgroundMode == "dark") Color.White else OnSurface,
                     onTextSelected = { selectedText ->
                         viewModel.onTextSelected(selectedText)
                     }
                 )
 
                 Spacer(modifier = Modifier.height(100.dp))
+            }
+
+            // 词典面板
+            dictionaryEntry?.let { entry ->
+                WordLookupSheet(
+                    entry = entry,
+                    onSave = {
+                        viewModel.saveDictionaryEntryToVocabulary()
+                        viewModel.dismissExplanation()
+                    },
+                    onDismiss = { viewModel.dismissExplanation() }
+                )
             }
 
             // 解释面板
@@ -131,6 +150,13 @@ fun ReaderScreen(
                     onDismiss = { viewModel.hideQuestionDialog() }
                 )
             }
+
+            if (showSettings) {
+                ReaderSettingsSheet(
+                    viewModel = viewModel,
+                    onDismiss = { showSettings = false }
+                )
+            }
         }
     }
 }
@@ -139,6 +165,8 @@ fun ReaderScreen(
 fun SelectableText(
     text: String,
     fontSize: Float,
+    lineSpacing: Float = 1.8f,
+    textColor: Color = OnSurface,
     onTextSelected: (String) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -149,8 +177,8 @@ fun SelectableText(
         Text(
             text = text,
             fontSize = fontSize.sp,
-            color = OnSurface,
-            lineHeight = (fontSize * 1.8).sp,
+            color = textColor,
+            lineHeight = (fontSize * lineSpacing).sp,
             modifier = Modifier.pointerInput(Unit) {
                 detectTapGestures(
                     onLongPress = {

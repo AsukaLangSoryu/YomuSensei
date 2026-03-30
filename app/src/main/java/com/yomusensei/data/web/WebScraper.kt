@@ -1,5 +1,7 @@
 package com.yomusensei.data.web
 
+import android.content.Context
+import com.yomusensei.data.local.LocalArticleManager
 import com.yomusensei.data.model.Article
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,10 +17,13 @@ enum class SiteType {
     NIKKEI,
     SANKEI,
     AOZORA,
+    SYOSETU,
     GENERIC
 }
 
-class WebScraper {
+class WebScraper(private val context: Context? = null) {
+
+    private val localArticleManager: LocalArticleManager? = context?.let { LocalArticleManager(it) }
 
     companion object {
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -38,51 +43,90 @@ class WebScraper {
             url.contains("nikkei.com") -> SiteType.NIKKEI
             url.contains("sankei.com") -> SiteType.SANKEI
             url.contains("aozora.gr.jp") -> SiteType.AOZORA
+            url.contains("syosetu.com") || url.contains("ncode.syosetu.com") -> SiteType.SYOSETU
             else -> SiteType.GENERIC
         }
     }
 
     /**
-     * 抓取网页并提取正文内容
+     * 抓取网页并提取正文内容（优先从本地读取）
      */
-    suspend fun fetchArticle(url: String): Result<ScrapedArticle> = withContext(Dispatchers.IO) {
-        try {
-            val doc = Jsoup.connect(url)
-                .userAgent(USER_AGENT)
-                .timeout(TIMEOUT)
-                .get()
+    suspend fun fetchArticle(url: String, maxRetries: Int = 2): Result<ScrapedArticle> = withContext(Dispatchers.IO) {
+        // 检查是否为青空文库文章，如果是则尝试从本地读取
+        if (url.contains("aozora.gr.jp") && localArticleManager != null) {
+            val match = Regex("cards/(\\d+)/card(\\d+)\\.html").find(url)
+            if (match != null) {
+                val authorId = match.groupValues[1]
+                val workId = match.groupValues[2]
 
-            val title = extractTitle(doc)
-            val content = extractContent(doc, url)
+                val localResult = localArticleManager.readArticle(authorId, workId)
+                if (localResult.isSuccess) {
+                    val content = localResult.getOrNull()!!
+                    val lines = content.lines()
+                    val title = lines.firstOrNull { it.startsWith("# ") }?.removePrefix("# ") ?: "青空文庫"
+                    val text = lines.drop(3).joinToString("\n")
 
-            // 改进的错误处理
-            when {
-                content.isBlank() -> {
-                    Result.failure(Exception("无法提取文章内容，可能是付费内容或网站结构不支持"))
-                }
-                content.length < 100 -> {
-                    Result.failure(Exception("提取的内容过短（${content.length}字），可能是付费墙或抓取失败"))
-                }
-                detectPaywall(doc) -> {
-                    Result.failure(Exception("检测到付费内容，请选择免费文章"))
-                }
-                else -> {
-                    Result.success(ScrapedArticle(
+                    return@withContext Result.success(ScrapedArticle(
                         title = title,
-                        content = content,
+                        content = text,
                         url = url
                     ))
                 }
             }
-        } catch (e: java.net.SocketTimeoutException) {
-            Result.failure(Exception("网络超时，请检查网络连接"))
-        } catch (e: java.net.UnknownHostException) {
-            Result.failure(Exception("无法访问该网站，请检查URL"))
-        } catch (e: org.jsoup.HttpStatusException) {
-            Result.failure(Exception("HTTP错误 ${e.statusCode}: ${e.message}"))
-        } catch (e: Exception) {
-            Result.failure(Exception("抓取失败: ${e.message}"))
         }
+
+        // 本地没有，从网络抓取
+        var lastException: Exception? = null
+
+        repeat(maxRetries + 1) { attempt ->
+            try {
+                val doc = Jsoup.connect(url)
+                    .userAgent(USER_AGENT)
+                    .timeout(TIMEOUT)
+                    .get()
+
+                val title = extractTitle(doc)
+                val content = extractContent(doc, url)
+
+                return@withContext when {
+                    content.isBlank() -> {
+                        Result.failure(Exception("无法解析文章内容，可能是付费内容或网站格式不支持"))
+                    }
+                    content.length < 100 -> {
+                        Result.failure(Exception("内容过短（${content.length}字），可能遇到付费墙"))
+                    }
+                    detectPaywall(doc) -> {
+                        Result.failure(Exception("检测到付费内容，请选择免费文章"))
+                    }
+                    isProductOrIndexPage(content) -> {
+                        Result.failure(Exception("这是商品介绍页或目录页，无法阅读正文"))
+                    }
+                    else -> {
+                        Result.success(ScrapedArticle(
+                            title = title,
+                            content = content,
+                            url = url
+                        ))
+                    }
+                }
+            } catch (e: java.net.SocketTimeoutException) {
+                lastException = Exception("网络超时")
+                if (attempt < maxRetries) {
+                    kotlinx.coroutines.delay(1000L * (attempt + 1))
+                }
+            } catch (e: java.net.UnknownHostException) {
+                return@withContext Result.failure(Exception("无法访问该网站"))
+            } catch (e: org.jsoup.HttpStatusException) {
+                return@withContext Result.failure(Exception("HTTP ${e.statusCode} 错误"))
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxRetries) {
+                    kotlinx.coroutines.delay(1000L * (attempt + 1))
+                }
+            }
+        }
+
+        Result.failure(lastException ?: Exception("抓取失败"))
     }
 
     /**
@@ -113,6 +157,7 @@ class WebScraper {
             SiteType.NIKKEI -> extractNikkeiContent(doc)
             SiteType.SANKEI -> extractSankeiContent(doc)
             SiteType.AOZORA -> extractAozoraContent(doc)
+            SiteType.SYOSETU -> extractSyosetuContent(doc)
             SiteType.GENERIC -> extractGenericContent(doc)
         }
 
@@ -196,6 +241,15 @@ class WebScraper {
     }
 
     /**
+     * 小説を読もう！(Syosetu) 专用提取
+     */
+    private fun extractSyosetuContent(doc: Document): String {
+        return doc.select("#novel_honbun").first()?.text()
+            ?: doc.select(".novel_view").first()?.text()
+            ?: ""
+    }
+
+    /**
      * 通用提取策略（两阶段：选择器 + 智能算法）
      */
     private fun extractGenericContent(doc: Document): String {
@@ -264,6 +318,19 @@ class WebScraper {
         }
 
         return bestElement?.text() ?: ""
+    }
+
+    /**
+     * 检测是否为商品页或目录页
+     */
+    private fun isProductOrIndexPage(content: String): Boolean {
+        val indicators = listOf(
+            "ISBN", "出版社", "発行日", "定価", "購入", "カート",
+            "在庫", "品切れ", "この本の内容", "目次", "著者略歴",
+            "フォーマット", "ページ数"
+        )
+        val matchCount = indicators.count { content.contains(it) }
+        return matchCount >= 3 && content.length < 1000
     }
 
     /**
@@ -379,7 +446,32 @@ class WebScraper {
     }
 
     /**
-     * 青空文庫随机作品推荐
+     * 青空文庫搜索作品（使用预设索引）
+     */
+    suspend fun searchAozoraWorks(query: String, count: Int = 5): Result<List<Article>> = withContext(Dispatchers.IO) {
+        try {
+            val results = AozoraIndex.search(query)
+
+            if (results.isEmpty()) {
+                return@withContext fetchAozoraRandomWorks(count)
+            }
+
+            val articles = results.take(count).map { work ->
+                Article(
+                    title = "${work.author} - ${work.title}",
+                    url = work.fileUrl,
+                    description = "青空文庫 - ${work.author}",
+                    source = "青空文庫"
+                )
+            }
+            Result.success(articles)
+        } catch (e: Exception) {
+            fetchAozoraRandomWorks(count)
+        }
+    }
+
+    /**
+     * 青空文庫随机作品推荐（返回实际可阅读的文本链接）
      */
     suspend fun fetchAozoraRandomWorks(count: Int = 5): Result<List<Article>> = withContext(Dispatchers.IO) {
         try {
@@ -387,15 +479,48 @@ class WebScraper {
                 .userAgent(USER_AGENT)
                 .timeout(TIMEOUT)
                 .get()
-            val links = doc.select("a[href*=cards]").shuffled().take(count)
-            val articles = links.mapNotNull { link ->
-                val title = link.text().ifBlank { null } ?: return@mapNotNull null
-                val href = link.attr("abs:href")
-                Article(title = title, url = href, description = "青空文庫 - 日本文学", source = "青空文庫")
+            val cardLinks = doc.select("a[href*=cards]").shuffled().take(count * 2)
+
+            val articles = mutableListOf<Article>()
+            cardLinks.forEach { link ->
+                if (articles.size >= count) return@forEach
+
+                val title = link.text()
+                if (title.isBlank()) return@forEach
+
+                val cardUrl = link.attr("abs:href")
+
+                // 访问作品页，提取实际文本链接
+                val textUrl = extractAozoraTextUrl(cardUrl)
+                if (textUrl != null) {
+                    articles.add(Article(
+                        title = title,
+                        url = textUrl,
+                        description = "青空文庫 - 日本文学",
+                        source = "青空文庫"
+                    ))
+                }
             }
             Result.success(articles)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private suspend fun extractAozoraTextUrl(cardUrl: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val doc = Jsoup.connect(cardUrl)
+                .userAgent(USER_AGENT)
+                .timeout(TIMEOUT)
+                .get()
+
+            // 查找 HTML 格式的文本链接
+            doc.select("a[href*=files]").firstOrNull { link ->
+                val href = link.attr("href")
+                href.endsWith(".html") && !href.contains("card")
+            }?.attr("abs:href")
+        } catch (e: Exception) {
+            null
         }
     }
 }

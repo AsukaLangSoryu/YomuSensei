@@ -14,7 +14,8 @@ import com.yomusensei.data.model.VocabularyStats
 fun VocabularyScreen(
     viewModel: VocabularyViewModel,
     onNavigateToDetail: (Long) -> Unit,
-    onNavigateToReview: () -> Unit
+    onNavigateToReview: () -> Unit,
+    onNavigateToHome: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val stats by viewModel.stats.collectAsState()
@@ -65,7 +66,8 @@ fun VocabularyScreen(
             when (selectedTab) {
                 0 -> WordListTab(
                     viewModel = viewModel,
-                    onNavigateToDetail = onNavigateToDetail
+                    onNavigateToDetail = onNavigateToDetail,
+                    onGoToArticles = onNavigateToHome
                 )
                 1 -> ReviewModeTab(
                     stats = stats,

@@ -45,7 +45,8 @@ data class GeminiRequest(
  * Gemini 工具定义
  */
 data class GeminiTool(
-    val google_search: GoogleSearchTool? = null
+    val google_search: GoogleSearchTool? = null,
+    val function_declarations: List<FunctionDeclaration>? = null
 )
 
 /**
@@ -59,7 +60,36 @@ data class GeminiContent(
 )
 
 data class GeminiPart(
-    val text: String
+    val text: String? = null,
+    val functionCall: FunctionCall? = null,
+    val functionResponse: FunctionResponse? = null
+)
+
+data class FunctionCall(
+    val name: String,
+    val args: Map<String, Any>
+)
+
+data class FunctionResponse(
+    val name: String,
+    val response: Map<String, Any>
+)
+
+data class FunctionDeclaration(
+    val name: String,
+    val description: String,
+    val parameters: JsonSchema
+)
+
+data class JsonSchema(
+    val type: String,
+    val properties: Map<String, JsonSchemaProperty>? = null,
+    val required: List<String>? = null
+)
+
+data class JsonSchemaProperty(
+    val type: String,
+    val description: String
 )
 
 data class GenerationConfig(
@@ -114,6 +144,11 @@ data class GeminiError(
 data class ArticleSearchResult(
     val text: String,
     val groundingChunks: List<GroundingChunk>?
+)
+
+data class ToolChatResponse(
+    val text: String,
+    val articles: List<Article> = emptyList()
 )
 
 /**

@@ -16,3 +16,8 @@ interface AiProvider {
     suspend fun explainText(text: String, context: String = ""): Result<String>
     suspend fun askQuestion(question: String, articleContext: String = ""): Result<String>
 }
+
+/**
+ * Marker interface for providers that support tool/function calling
+ */
+interface ToolCapableProvider

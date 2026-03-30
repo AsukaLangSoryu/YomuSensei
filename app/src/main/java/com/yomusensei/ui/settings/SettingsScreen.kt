@@ -34,6 +34,7 @@ fun SettingsScreen(
     val openaiCompatModel by viewModel.openaiCompatModel.collectAsState()
     val isSaving by viewModel.isSaving.collectAsState()
     val saveSuccess by viewModel.saveSuccess.collectAsState()
+    val dictionaryWordCount by viewModel.dictionaryWordCount.collectAsState()
 
     var showGeminiKey by remember { mutableStateOf(false) }
     var showOpenAIKey by remember { mutableStateOf(false) }
@@ -46,7 +47,6 @@ fun SettingsScreen(
         }
     }
 
-    val isOpenClaw = openaiCompatBaseUrl.contains("18789")
 
     Scaffold(
         topBar = {
@@ -234,29 +234,44 @@ fun SettingsScreen(
                             value = openaiCompatModel,
                             onValueChange = { viewModel.updateOpenAICompatModel(it) },
                             modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("gpt-4o-mini / deepseek-chat / openclaw") },
+                            placeholder = { Text("gpt-4o-mini / deepseek-chat / gemini-2.0-flash") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp)
                         )
-
-                        // OpenClaw tip
-                        if (isOpenClaw) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = "OpenClaw 模式：请确保电脑上的 OpenClaw 正在运行，且手机和电脑处于同一 WiFi 网络。",
-                                    fontSize = 13.sp,
-                                    modifier = Modifier.padding(12.dp),
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
                     }
+                }
+            }
+
+            // 词典统计卡片
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Surface),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "离线词典",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "已缓存 $dictionaryWordCount 个词",
+                            fontSize = 14.sp,
+                            color = TextSecondary
+                        )
+                    }
+                    Text(
+                        text = "📚",
+                        fontSize = 32.sp
+                    )
                 }
             }
 

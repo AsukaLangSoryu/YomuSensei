@@ -5,7 +5,7 @@
 
 ## 技术栈
 - Kotlin + Jetpack Compose
-- 多平台 AI 支持（Gemini / OpenAI 兼容 / OpenClaw 本地）
+- 多平台 AI 支持（Gemini / OpenAI 兼容）
 - Jsoup 网页抓取
 - Retrofit + OkHttp 网络请求
 - Room Database（词库数据持久化）
@@ -14,7 +14,7 @@
 ## 项目结构
 ```
 YomuSensei/app/src/main/java/com/yomusensei/
-├── MainActivity.kt          # 主入口（使用 settingsRepo.buildAiProvider()）
+├── MainActivity.kt          # 主入口（创建 JishoApiService + ToolExecutor，传给 HomeViewModel）
 ├── ui/
 │   ├── Navigation.kt        # 页面导航（VocabularyViewModel 在此提升）
 │   ├── home/                # 首页（AI对话 + 文章推荐）
@@ -24,32 +24,58 @@ YomuSensei/app/src/main/java/com/yomusensei/
 │   └── theme/               # 主题配置
 └── data/
     ├── api/                 # AI Provider 抽象层
-    │   ├── AiProvider.kt        # 接口定义 + UserIntent 枚举
-    │   ├── GeminiProvider.kt    # Gemini 实现
-    │   ├── OpenAICompatProvider.kt  # OpenAI 兼容实现（DeepSeek/GLM/Kimi/OpenClaw）
-    │   └── SettingsRepository.kt    # 多 provider 配置 + buildAiProvider() 工厂
+    │   ├── AiProvider.kt        # 接口定义 + UserIntent 枚举 + ToolCapableProvider 标记接口
+    │   ├── GeminiProvider.kt    # Gemini 实现（含 chatWithTools() 工具调用循环）
+    │   ├── OpenAICompatProvider.kt  # OpenAI 兼容实现（DeepSeek/GLM/Kimi 等）
+    │   ├── JishoApiService.kt   # Jisho 词典 API（Retrofit）
+    │   ├── TavilyApiService.kt  # Tavily 搜索 API（Retrofit）
+    │   ├── SettingsRepository.kt    # 多 provider 配置 + 阅读设置持久化
+    │   └── tools/
+    │       ├── ToolDefinitions.kt   # 4个工具定义（search_japanese_articles/fetch_webpage/lookup_word/save_vocabulary）
+    │       └── ToolExecutor.kt      # 工具执行器（调用 Tavily/WebScraper/VocabularyRepository/JishoApiService）
     ├── web/                 # 网页抓取（WebScraper）
     ├── vocabulary/          # 词库数据层（Room Database）
-    └── model/               # 数据模型（含 ArticleSearchResult）
+    └── model/               # 数据模型（含 ArticleSearchResult、FunctionCall/Response 等工具模型）
 ```
 
-## 当前状态（2026-03-25 更新）
+## 当前状态（2026-03-30 更新）
 
 ### 核心功能
 - ✅ 基础框架完成
 - ✅ 首页 AI 对话功能
 - ✅ 直接输入 URL 功能
 - ✅ 阅读页面 + 词句解释
-- ✅ 多平台 AI 支持（Gemini / OpenAI 兼容 / OpenClaw）
+- ✅ 多平台 AI 支持（Gemini / OpenAI 兼容）
 - ✅ 智能意图识别（自动判断用户是要推荐文章/问日语问题/闲聊）
 - ✅ 对话模式切换（智能/找文章/聊天 三种模式）
 - ✅ 多轮对话历史支持
-- ✅ Google Search Grounding（仅 Gemini，解决AI推荐URL不准确问题）
+- ✅ **消息中 URL 可点击**（自动识别并在浏览器打开）
+- ✅ **阅读设置面板**（字体/行间距/页边距/背景模式）
 
-### 网页抓取
+### Function Calling 工具调用（Gemini 专属）
+当使用 Gemini 且 AUTO 模式时，HomeViewModel 会走 `handleWithTools()` 路径，AI 可主动调用工具：
+- `search_japanese_articles` - **Tavily API 搜索日语文章**（替代原有的 search_nhk_easy/search_aozora）
+- `fetch_webpage` - 抓取指定 URL 的网页正文
+- `lookup_word` - 通过 Jisho API 查询日语单词读音/词性/释义
+- `save_vocabulary` - 将单词保存到词库
+
+**改进**：
+- ✅ 集成 Tavily Search API（免费额度 1000次/月）
+- ✅ 域名白名单过滤（只搜索 NHK、朝日、每日等可靠网站）
+- ✅ 搜索后只返回文章列表，用户点击卡片才抓取内容
+- ✅ 避免自动抓取导致的多次失败提示
+
+### 网页抓取与离线阅读（2026-03-30 新增）
 - ✅ 支持5个主流日本新闻网站（朝日、读卖、每日、日经、产经）
-- ✅ NHK Easy 直接抓取（HTML + JSON 双通道，优先于 AI 搜索）
-- ✅ 青空文庫随机作品推荐
+- ✅ NHK Easy 直接抓取（HTML + JSON 双通道）
+- ✅ **青空文庫离线阅读** - 44篇经典文学作品预下载到 assets
+  - 夏目漱石 9篇（こころ、坊っちゃん、吾輩は猫である等）
+  - 宮沢賢治 8篇（銀河鉄道の夜、注文の多い料理店等）
+  - 芥川龍之介 14篇（羅生門、蜘蛛の糸、河童等）
+  - 太宰治 6篇（人間失格、走れメロス、斜陽等）
+  - 森鴎外、梶井基次郎、坂口安吾等 7篇
+- ✅ **本地优先策略** - WebScraper 优先从 assets 读取，网络失败时自动回退
+- ✅ **AozoraIndex** - 预设索引支持按标题/作者搜索
 - ✅ 付费墙检测和清晰的错误提示
 
 ### 词库功能
@@ -64,16 +90,29 @@ YomuSensei/app/src/main/java/com/yomusensei/
 - ✅ **间隔重复算法** - 6级复习系统（ReviewScheduler）
 - ✅ **智能干扰项** - 4层回退策略，已修复 bug（返回 word 而非 meaning）
 
-### OpenClaw 集成
-- ✅ `openclaw-skill/SKILL.md` - 日语阅读助手技能定义
-- ✅ `openclaw-skill/README.md` - 安装与配置说明
-- ✅ App 通过 OpenAI 兼容接口对接本地 OpenClaw
+### 词典功能（2026-03-30 新增）
+- ✅ **离线词典** - 4931个JLPT N5-N3词条预装到assets
+- ✅ **五十音浏览** - 按假名行（あ、か、さ...）筛选词汇
+- ✅ **搜索功能** - 支持按单词/读音搜索
+- ✅ **混合查询** - 本地词典优先，在线Jisho API补充，自动缓存到数据库
+- ✅ **词典统计** - 设置页显示已缓存词条数量
+- ✅ **DictionaryBrowserScreen** - 独立词典浏览页面
+- ✅ **KanaSelector** - 五十音筛选组件
 
-## 待实现功能
+### 阅读体验优化（2026-03-26 新增）
+- ✅ **字体大小调整** - 14-28sp，步长 2sp
+- ✅ **行间距调整** - 1.0x-2.5x，步长 0.2x
+- ✅ **页边距调整** - 12-32dp，步长 4dp
+- ✅ **背景模式切换** - 浅色/护眼（米黄色）/深色
+- ✅ **设置持久化** - DataStore 保存，重启后保持
+- ✅ **统一设置面板** - BottomSheet 集中管理所有阅读设置
+
+## 待实现/待优化功能
+- ⏳ **AI 记忆系统** - 类似 Claude Code 的 memory.md，让 AI 记住用户偏好、学习进度、常见问题
+- ⏳ **词典功能优化** - 改进单词查询界面和结果展示
 - ⏳ 手动添加单词（输入单词，AI自动获取信息）
 - ⏳ 标签管理（添加/删除标签、按标签筛选）
 - ⏳ 阅读历史记录
-- ⏳ 离线模式
 
 ## AI Provider 配置说明
 
@@ -89,21 +128,10 @@ App 设置页 → 选择「AI 提供商」：
 | DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
 | 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
 | Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
-| OpenClaw | `http://<Tailscale IP>:18789` | `openclaw` |
-
-## OpenClaw 远程访问配置（Tailscale）
-
-> 详见 `docs/guides/openclaw-tailscale-setup.md`
-
-核心流程：
-1. 电脑和手机都安装 Tailscale，登同一账号
-2. 在 App 设置中填写 Tailscale 分配的电脑 IP（`100.x.x.x:18789`）
-3. 使用前确保电脑上 OpenClaw 正在运行
 
 ## 设计文档
 - `docs/plans/2026-01-19-vocabulary-feature-design.md` - 词库功能设计方案
 - `docs/plans/2026-03-25-multi-provider-openclaw-upgrade.md` - 多平台 AI 升级方案
-- `docs/guides/openclaw-tailscale-setup.md` - OpenClaw + Tailscale 配置指南
 
 ## 用户信息
 - 日语水平：初级（N5-N4）

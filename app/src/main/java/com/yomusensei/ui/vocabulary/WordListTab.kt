@@ -22,7 +22,8 @@ import java.util.*
 @Composable
 fun WordListTab(
     viewModel: VocabularyViewModel,
-    onNavigateToDetail: (Long) -> Unit
+    onNavigateToDetail: (Long) -> Unit,
+    onGoToArticles: () -> Unit = {}
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val words by viewModel.searchResults.collectAsState()
@@ -51,7 +52,11 @@ fun WordListTab(
 
         // 单词列表
         if (words.isEmpty()) {
-            EmptyState()
+            if (searchQuery.isEmpty()) {
+                EmptyVocabularyState(onGoToArticles = onGoToArticles)
+            } else {
+                EmptyState()
+            }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),

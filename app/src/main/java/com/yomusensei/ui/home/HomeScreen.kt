@@ -1,5 +1,7 @@
 package com.yomusensei.ui.home
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,8 +10,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Article
@@ -214,6 +222,9 @@ fun ChatMessageItem(
     message: ChatMessage,
     onArticleClick: (Article) -> Unit
 ) {
+    val context = LocalContext.current
+    val annotatedText = buildAnnotatedStringWithUrls(message.content, message.isFromUser)
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (message.isFromUser) Alignment.End else Alignment.Start
@@ -232,11 +243,20 @@ fun ChatMessageItem(
                 .background(if (message.isFromUser) Primary else Surface)
                 .padding(12.dp)
         ) {
-            Text(
-                text = message.content,
-                color = if (message.isFromUser) OnPrimary else OnSurface,
-                fontSize = 15.sp,
-                lineHeight = 22.sp
+            ClickableText(
+                text = annotatedText,
+                style = LocalTextStyle.current.copy(
+                    color = if (message.isFromUser) OnPrimary else OnSurface,
+                    fontSize = 15.sp,
+                    lineHeight = 22.sp
+                ),
+                onClick = { offset ->
+                    annotatedText.getStringAnnotations("URL", offset, offset)
+                        .firstOrNull()?.let { annotation ->
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(annotation.item))
+                            context.startActivity(intent)
+                        }
+                }
             )
         }
 
@@ -440,5 +460,21 @@ fun ModeChip(
                 fontSize = 13.sp
             )
         }
+    }
+}
+
+private fun buildAnnotatedStringWithUrls(text: String, isFromUser: Boolean): AnnotatedString {
+    val urlPattern = "https?://[^\\s]+".toRegex()
+    return buildAnnotatedString {
+        var lastIndex = 0
+        urlPattern.findAll(text).forEach { match ->
+            append(text.substring(lastIndex, match.range.first))
+            pushStyle(SpanStyle(color = if (isFromUser) Color(0xFFBBDEFB) else Color(0xFF2196F3), textDecoration = TextDecoration.Underline))
+            addStringAnnotation("URL", match.value, match.range.first, match.range.last + 1)
+            append(match.value)
+            pop()
+            lastIndex = match.range.last + 1
+        }
+        append(text.substring(lastIndex))
     }
 }

@@ -7,7 +7,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
-class GeminiProvider(private val settingsRepository: SettingsRepository) : AiProvider {
+class GeminiProvider(private val settingsRepository: SettingsRepository) : AiProvider, ToolCapableProvider {
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -250,5 +250,110 @@ class GeminiProvider(private val settingsRepository: SettingsRepository) : AiPro
         }
 
         return chat(userMessage, systemPrompt)
+    }
+
+    suspend fun chatWithTools(
+        history: List<GeminiContent>,
+        systemPrompt: String,
+        toolExecutor: com.yomusensei.data.api.tools.ToolExecutor,
+        onToolStatus: (String) -> Unit
+    ): Result<ToolChatResponse> {
+        val apiKey = settingsRepository.getGeminiApiKey()
+        if (apiKey.isBlank()) {
+            return Result.failure(Exception("请先在设置中配置 Gemini API Key"))
+        }
+
+        return try {
+            val contents = mutableListOf<GeminiContent>()
+
+            contents.add(GeminiContent(
+                parts = listOf(GeminiPart(text = systemPrompt)),
+                role = "user"
+            ))
+            contents.add(GeminiContent(
+                parts = listOf(GeminiPart(text = "好的，我明白了。")),
+                role = "model"
+            ))
+
+            contents.addAll(history)
+
+            val tools = listOf(
+                GeminiTool(
+                    function_declarations = com.yomusensei.data.api.tools.ToolDefinitions.AUTO_MODE
+                )
+            )
+
+            val collectedArticles = mutableListOf<Article>()
+            var roundCount = 0
+            val maxRounds = 5
+
+            while (roundCount < maxRounds) {
+                roundCount++
+
+                val request = GeminiRequest(contents = contents, tools = tools)
+                val response = apiService.generateContent(apiKey, request)
+
+                if (response.error != null) {
+                    return Result.failure(Exception(response.error.message ?: "API调用失败"))
+                }
+
+                val candidate = response.candidates?.firstOrNull()
+                val parts = candidate?.content?.parts ?: emptyList()
+
+                val functionCallPart = parts.firstOrNull { it.functionCall != null }
+
+                if (functionCallPart != null) {
+                    val functionCall = functionCallPart.functionCall!!
+
+                    val statusMsg = when (functionCall.name) {
+                        "search_japanese_articles" -> "正在搜索日语文章..."
+                        "search_nhk_easy" -> "正在搜索 NHK 简单新闻..."
+                        "search_aozora" -> "正在搜索青空文库..."
+                        "fetch_webpage" -> "正在加载网页..."
+                        "lookup_word" -> "正在查询词典..."
+                        "save_vocabulary" -> "正在保存单词..."
+                        else -> "正在处理..."
+                    }
+                    onToolStatus(statusMsg)
+
+                    contents.add(GeminiContent(
+                        parts = listOf(GeminiPart(functionCall = functionCall)),
+                        role = "model"
+                    ))
+
+                    val functionResponse = toolExecutor.execute(functionCall)
+
+                    if (functionCall.name == "search_japanese_articles" || functionCall.name == "search_nhk_easy" || functionCall.name == "search_aozora") {
+                        @Suppress("UNCHECKED_CAST")
+                        val articlesList = functionResponse.response["articles"] as? List<Map<String, Any>>
+                        articlesList?.forEach { articleMap ->
+                            val title = articleMap["title"] as? String ?: ""
+                            val url = articleMap["url"] as? String ?: ""
+                            val source = articleMap["source"] as? String ?: articleMap["summary"] as? String ?: ""
+                            if (title.isNotBlank() && url.isNotBlank()) {
+                                collectedArticles.add(Article(title = title, url = url, source = source))
+                            }
+                        }
+                    }
+
+                    contents.add(GeminiContent(
+                        parts = listOf(GeminiPart(functionResponse = functionResponse)),
+                        role = "user"
+                    ))
+
+                    continue
+                }
+
+                val text = parts.firstOrNull { it.text != null }?.text ?: ""
+                return Result.success(ToolChatResponse(text = text, articles = collectedArticles))
+            }
+
+            Result.success(ToolChatResponse(
+                text = "抱歉，处理您的请求时遇到了问题，请重试。",
+                articles = collectedArticles
+            ))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }
